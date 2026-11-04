@@ -1,5 +1,5 @@
 @import "tailwindcss";
-
+@plugin "@tailwindcss/typography";
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -23,4 +23,40 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Custom Table Styles for Jodit Editor Output */
+.prose table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 1.5rem 0 !important;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+
+.prose thead {
+  background-color: #f8fafc;
+}
+
+.prose th, .prose td {
+  padding: 0.75rem 1rem !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.prose th {
+  font-weight: 600 !important;
+  color: #334155 !important;
+  text-align: left;
+}
+
+.prose td {
+  color: #475569 !important;
+}
+
+.prose tbody tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+
+.prose tbody tr:hover {
+  background-color: #f1f5f9;
 }
