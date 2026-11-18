@@ -1,38 +1,24 @@
-# Product Requirements Document (PRD) - Modul Admin Sekolah
+# Product Requirements Document (PRD) - Modul Portal Admin (`admin`)
 
 ## 1. Ikhtisar (Overview)
-**Nama Modul**: Portal Admin Sekolah
-**Aktor**: Staf Tata Usaha / Kepala Program / Koordinator IT Sekolah
-**Tujuan**: Admin Sekolah bertugas sebagai administrator lokal (*Tenant Admin*). Mereka tidak mengurusi teknis ujian, melainkan berfokus pada administrasi data (Master Data) institusinya sendiri, seperti pengisian data guru, murid, dan jurusan. Semua yang mereka lakukan bersifat terisolasi hanya untuk sekolahnya.
+- **Nama Modul**: Portal Admin (`/admin`)
+- **Aktor**: Administrator AkademiData (`role: 'admin'`)
+- **Tujuan**: Mengelola pendaftaran institusi sekolah beserta pembuatan **Token Sekolah unik** (yang digunakan Guru saat mendaftar akun), serta mengelola data pengguna (Guru & Siswa) dan kelas.
 
 ---
 
-## 2. Fitur Utama & User Stories (Epics)
+## 2. Fitur Utama & User Stories
 
-### Epic 1: Manajemen Master Data Internal
-Data dasar yang menopang kegiatan kelas.
-- **User Story 1.1**: Sebagai Admin Sekolah, saya ingin mendaftarkan daftar Jurusan / Program Studi yang ada di sekolah (Misal: TKJ, RPL) agar siswa dapat dikelompokkan dengan rapi.
-- **User Story 1.2**: Sebagai Admin Sekolah, saya ingin mengatur Tahun Ajaran / Semester aktif agar riwayat data terstruktur per periode.
+### Epic 1: Pendaftaran Sekolah & Generate Token Sekolah Unik (`/admin/sekolah`)
+- **User Story 1.1**: Sebagai Admin, saya ingin mendaftarkan sekolah baru dengan menarik data dari NPSN Dapodik atau mengisi form secara manual (`/admin/sekolah/tambah`).
+- **User Story 1.2**: Sebagai Admin, begitu sekolah didaftarkan, saya ingin sistem **langsung meng-generate Token Sekolah unik** (`token_sekolah`) yang dijamin tidak mungkin sama dengan sekolah lain.
+- **User Story 1.3**: Sebagai Admin, saya ingin melihat daftar seluruh sekolah beserta Token Sekolah masing-masing, menyalin token dengan 1 klik, atau men-generate ulang (*regenerate*) token baru jika diperlukan (`/admin/sekolah` & `/admin/sekolah/detail/[npsn]`).
+- **User Story 1.4**: Sebagai Admin, saya ingin dapat men-*suspend* atau mengaktifkan kembali status sekolah sehingga token sekolah yang di-*suspend* tidak dapat dipakai untuk registrasi Guru baru.
 
-### Epic 2: Manajemen Akun Pengguna (Guru)
-Pembuatan akun massal (*Bulk Generation*) adalah inti fitur dari aktor ini khusus untuk tenaga pendidik.
-- **User Story 2.1**: Sebagai Admin Sekolah, saya ingin mengunduh template format Excel/CSV dari sistem.
-- **User Story 2.2**: Sebagai Admin Sekolah, saya ingin **mengunggah file Excel** yang berisi daftar guru sekaligus, sehingga sistem otomatis membuatkan akun untuk mereka tanpa saya harus *input* satu-satu.
-- **User Story 2.3**: Sebagai Admin Sekolah, saya ingin sistem otomatis mem-parsing NIP dan tanggal lahir menjadi *Username*. Untuk keamanan, password akan di-generate secara acak oleh sistem dan dikirim langsung ke email guru masing-masing.
-- **User Story 2.4**: Sebagai Admin Sekolah, saya ingin melihat, mencari (search), mengedit profil dasar, atau menonaktifkan/menghapus akun guru spesifik.
+### Epic 2: Mekanisme Keunikan Token Sekolah (`token_sekolah`)
+- Format token: `SCH-<4_DIGIT_NPSN>-<6_KARAKTER_CSPRNG>` (menggunakan `crypto.randomBytes` dengan alfabet tanpa karakter ambigu `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`).
+- Sebelum disimpan ke MongoDB, generator melakukan pengecekan `Sekolah.exists({ token_sekolah })` dalam *loop* ditambah indeks `unique: true` pada skema Mongoose `Sekolah`, sehingga **mustahil ada dua sekolah dengan token yang sama**.
 
-### Epic 3: Dukungan Lupa Kata Sandi (Helpdesk Internal)
-- **User Story 3.1**: Sebagai Admin Sekolah, jika ada siswa atau guru yang lupa kata sandinya, saya ingin dapat menekan tombol "Reset Password" di dashboard saya untuk mereset kata sandi mereka kembali ke *default*.
-
-### Epic 4: Dashboard Sekolah Lokal
-- **User Story 4.1**: Sebagai Admin Sekolah, saya ingin melihat statistik lokal sekolah saya: total guru terdaftar, total siswa aktif, total jurusan.
-
----
-
-## 3. Kriteria Penerimaan (Acceptance Criteria)
-- Seluruh *query* database yang dijalankan oleh Admin Sekolah secara otomatis divalidasi dengan `WHERE id_sekolah = [Session.id_sekolah]`.
-- Sistem tidak mengizinkan ukuran *upload* Excel melebihi batasan (misal: max 2MB atau 1000 baris per eksekusi).
-- Sistem memberikan respon *success* / *failed logs* jika dalam upload massal terdapat data duplikat (misal NISN sudah dipakai).
-
-## 4. Batasan & Out of Scope (Tahap Ini)
-- Admin Sekolah **tidak** memiliki fitur untuk membuat soal ujian, melihat jawaban soal, ataupun mengurus rekap nilai SQL. Itu murni wewenang Guru.
+### Epic 3: Manajemen Pengguna & Kelas (`/admin/pengguna` & `/admin/kelas`)
+- **User Story 3.1**: Sebagai Admin, saya ingin melihat daftar seluruh Guru (lengkap dengan informasi asal sekolahnya) dan Siswa di `/admin/pengguna`.
+- **User Story 3.2**: Sebagai Admin, saya ingin dapat menambahkan akun Guru secara manual dan mengaitkannya ke sekolah tertentu di `/admin/pengguna/tambah`.

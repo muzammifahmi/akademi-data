@@ -60,3 +60,17 @@ body {
 .prose tbody tr:hover {
   background-color: #f1f5f9;
 }
+
+/* Sembunyikan elemen add-new-line (Break / Enter icon) bawaan Jodit yang sering melayang keluar tempatnya */
+.jodit-add-new-line,
+.jodit-add-new-line * {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  position: absolute !important;
+  left: -9999px !important;
+  top: -9999px !important;
+}

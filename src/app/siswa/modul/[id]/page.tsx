@@ -2,6 +2,7 @@ import Link from "next/link";
 import dbConnect from "@/lib/mongoose";
 import Modul from "@/models/Modul";
 import Progress from "@/models/Progress";
+import { syncStudentProgressWithModul } from "@/lib/progress-sync";
 import { notFound, redirect } from "next/navigation";
 import FinishModuleButton from "../../components/FinishModuleButton";
 import ExerciseView from "./ExerciseView";
@@ -45,8 +46,9 @@ export default async function IsiMateri({
       if (payload.role === 'siswa') {
         const progress = await Progress.findOne({ user_id: payload.id as string, modul_id: resolvedParams.id }).lean();
         if (progress) {
-          completedSubBabs = (progress as any).completed_subbabs || [];
-          const allScores = (progress as any).exercise_scores || [];
+          const synced = await syncStudentProgressWithModul(moduleData, progress);
+          completedSubBabs = synced.completedSubBabIds;
+          const allScores = synced.exerciseScores || [];
           const currentSubId = moduleData.babs?.[parseInt(resolvedSearchParams.bab as string || "0")]?.subBabs?.[parseInt(resolvedSearchParams.sub as string || "0")]?._id?.toString();
           if (currentSubId) {
              existingExerciseData = allScores.find((s: any) => s.subbab_id === currentSubId) || null;

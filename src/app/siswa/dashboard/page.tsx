@@ -56,13 +56,9 @@ export default async function TampilanUtama() {
           <div>
             <h1 className="text-2xl font-bold text-white mb-1">Selamat Datang, {userData?.name || 'Siswa'}!</h1>
             <p className="text-blue-100 text-sm font-medium">
-              NISN: {userData?.nisn_nip || 'Belum diisi'} • Kelas: {userData?.kelas || 'Belum bergabung'}
+              Kelas: {userData?.kelas || 'Belum bergabung'}
             </p>
           </div>
-        </div>
-        <div className="text-left sm:text-right hidden md:block">
-          <p className="text-blue-200 text-xs font-bold uppercase tracking-wider mb-1">Tahun Ajaran</p>
-          <p className="text-white font-bold text-sm">2025/2026 - Ganjil</p>
         </div>
       </div>
 

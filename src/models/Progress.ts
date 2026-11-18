@@ -10,6 +10,7 @@ export interface IProgress extends Document {
     subbab_id: string;
     score: number;
     answers: Record<string, string>;
+    results?: Record<string, any>;
   }[];
 }
 
@@ -22,7 +23,8 @@ const ProgressSchema: Schema = new Schema({
   exercise_scores: [{
     subbab_id: { type: String },
     score: { type: Number },
-    answers: { type: Schema.Types.Mixed }
+    answers: { type: Schema.Types.Mixed },
+    results: { type: Schema.Types.Mixed }
   }]
 });
 

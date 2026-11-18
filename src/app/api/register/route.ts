@@ -1,112 +1,121 @@
 import { NextResponse } from 'next/server';
+import { SignJWT } from 'jose';
 import connectToDatabase from '@/lib/mongoose';
 import User from '@/models/User';
+import { Sekolah } from '@/models/Sekolah';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_dev_only';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    
-    await connectToDatabase();
+    const { nama, email, password, role, token_sekolah, sekolah_id } = body;
 
-    // Pastikan Email belum terdaftar
-    const existingUser = await User.findOne({ email: body.email });
-    if (existingUser) {
+    if (!nama || !email || !password) {
       return NextResponse.json(
-        { error: 'Email sudah terdaftar.' },
+        { error: 'Nama lengkap, email, dan kata sandi wajib diisi.' },
         { status: 400 }
       );
     }
 
-    // Buat User (Siswa)
-    const newUser = await User.create({
-      name: body.nama,
-      email: body.email,
-      password: body.password,
-      role: 'siswa',
-      sekolah_id: body.sekolah_id ? body.sekolah_id : undefined,
-    });
+    const targetRole = role === 'guru' ? 'guru' : 'siswa';
 
-    // Menggunakan Nodemailer untuk pengiriman email verifikasi (atau selamat datang)
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      try {
-        const nodemailer = require('nodemailer');
-        
-        const emailUser = process.env.EMAIL_USER.replace(/"/g, '');
-        const emailPass = process.env.EMAIL_PASS.replace(/"/g, '');
+    await connectToDatabase();
 
-        const transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: emailUser,
-            pass: emailPass,
-          },
-        });
-
-        const mailOptions = {
-          from: `"AkademiData" <${emailUser}>`,
-          to: body.email,
-          subject: 'Verifikasi Akun Siswa - AkademiData',
-          html: `
-<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-  <!-- Header -->
-  <div style="background-color: #0D47A1; padding: 32px 20px; text-align: center;">
-    <h1 style="color: #ffffff; margin: 0; font-size: 26px; letter-spacing: 1px;">AkademiData</h1>
-  </div>
-  
-  <!-- Body -->
-  <div style="padding: 40px 32px; color: #334155; line-height: 1.6;">
-    <h2 style="color: #0D47A1; font-size: 22px; margin-top: 0; margin-bottom: 24px;">Selamat Datang!</h2>
-    <p style="margin: 0 0 16px 0; font-size: 16px;">Halo ${body.nama},</p>
-    <p style="margin: 0 0 28px 0; font-size: 16px;">Akun Siswa Anda di sistem AkademiData telah berhasil dibuat dan diverifikasi.</p>
-    
-    <!-- Info Box -->
-    <div style="background-color: #F8FAFC; border-left: 4px solid #2196F3; padding: 24px; margin-bottom: 28px; border-radius: 0 6px 6px 0;">
-      <p style="margin: 0 0 16px 0; font-weight: bold; color: #0F172A; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Informasi Akun Anda:</p>
-      <table style="width: 100%; border-collapse: collapse;">
-        <tr>
-          <td style="padding: 8px 0; width: 140px; color: #64748B; font-size: 15px;">Email Login</td>
-          <td style="padding: 8px 0; font-weight: bold; font-size: 15px;"><a href="mailto:${body.email}" style="color: #0D47A1; text-decoration: underline;">${body.email}</a></td>
-        </tr>
-      </table>
-    </div>
-    
-    <div style="text-align: center; margin: 36px 0;">
-      <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}" style="background-color: #2196F3; color: #ffffff; text-decoration: none; padding: 14px 36px; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block; box-shadow: 0 2px 4px rgba(33, 150, 243, 0.3);">Masuk ke Portal</a>
-    </div>
-    
-    <p style="margin: 0 0 6px 0; font-size: 16px;">Salam hangat,</p>
-    <p style="margin: 0; font-weight: bold; color: #0D47A1; font-size: 16px;">Tim AkademiData</p>
-  </div>
-  
-  <!-- Footer -->
-  <div style="background-color: #F8FAFC; padding: 24px; text-align: center; border-top: 1px solid #E2E8F0;">
-    <p style="margin: 0; font-size: 13px; color: #64748B; line-height: 1.5;">
-      Pesan ini dikirim secara otomatis oleh sistem AkademiData.<br>Mohon tidak membalas email ini secara langsung.
-    </p>
-    <p style="margin: 12px 0 0 0; font-size: 13px; color: #94A3B8;">
-      &copy; ${new Date().getFullYear()} AkademiData. Hak Cipta Dilindungi.
-    </p>
-  </div>
-</div>
-          `,
-        };
-        
-        await transporter.sendMail(mailOptions);
-        console.log(`[EMAIL] Sukses mengirim email registrasi siswa ke ${body.email}`);
-      } catch (emailError) {
-        console.error("[EMAIL ERROR] Gagal mengirim via Nodemailer:", emailError);
-      }
-    } else {
-      console.log(`[EMAIL MOCK] Mengirim email selamat datang ke ${body.email}...`);
+    // Pastikan Email belum terdaftar
+    const existingUser = await User.findOne({ email: email.trim().toLowerCase() }) || await User.findOne({ email: email.trim() });
+    if (existingUser) {
+      return NextResponse.json(
+        { error: 'Alamat email tersebut sudah terdaftar. Silakan langsung masuk (Login).' },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json(
-      { message: 'Pendaftaran berhasil. Silakan cek email Anda.' },
+    let resolvedSekolahId: any = undefined;
+    let namaSekolahTerdaftar = '';
+
+    // Jika mendaftar sebagai Guru, wajib memvalidasi Token Sekolah
+    if (targetRole === 'guru') {
+      const cleanedToken = String(token_sekolah || '').trim().toUpperCase();
+      if (!cleanedToken) {
+        return NextResponse.json(
+          { error: 'Token Sekolah wajib diisi untuk pendaftaran akun Guru.' },
+          { status: 400 }
+        );
+      }
+
+      const sekolahDoc = await Sekolah.findOne({ token_sekolah: cleanedToken });
+      if (!sekolahDoc) {
+        return NextResponse.json(
+          { error: 'Token Sekolah tidak valid atau tidak ditemukan. Hubungi Admin untuk mendapatkan Token Sekolah yang benar.' },
+          { status: 400 }
+        );
+      }
+
+      if (sekolahDoc.status === 'Suspended') {
+        return NextResponse.json(
+          { error: 'Sekolah pemilik token ini sedang dinonaktifkan sementara.' },
+          { status: 403 }
+        );
+      }
+
+      resolvedSekolahId = sekolahDoc._id;
+      namaSekolahTerdaftar = sekolahDoc.nama_sekolah;
+    } else if (sekolah_id) {
+      resolvedSekolahId = sekolah_id;
+    }
+
+    // Buat User baru (Guru atau Siswa)
+    const newUser = await User.create({
+      name: nama.trim(),
+      email: email.trim(),
+      password,
+      role: targetRole,
+      authProvider: 'local',
+      sekolah_id: resolvedSekolahId,
+      status: 'Active',
+    });
+
+    // Buat JWT Session agar pengguna (khususnya Siswa & Guru) langsung masuk ke dashboard masing-masing
+    const secret = new TextEncoder().encode(JWT_SECRET);
+    const token = await new SignJWT({
+      id: newUser._id.toString(),
+      email: newUser.email,
+      role: newUser.role,
+      sekolah_id: resolvedSekolahId ? resolvedSekolahId.toString() : undefined,
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setExpirationTime('24h')
+      .sign(secret);
+
+    const response = NextResponse.json(
+      {
+        success: true,
+        message:
+          targetRole === 'guru'
+            ? `Pendaftaran Guru berhasil dan terhubung ke ${namaSekolahTerdaftar}!`
+            : 'Pendaftaran Siswa berhasil! Mengarahkan ke Portal Siswa...',
+        user: {
+          id: newUser._id.toString(),
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role,
+        },
+      },
       { status: 201 }
     );
-    
+
+    response.cookies.set('auth_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24,
+    });
+
+    return response;
   } catch (error) {
-    console.error("Gagal mendaftar:", error);
+    console.error('Gagal mendaftar:', error);
     return NextResponse.json(
       { error: 'Terjadi kesalahan pada server saat pendaftaran.' },
       { status: 500 }

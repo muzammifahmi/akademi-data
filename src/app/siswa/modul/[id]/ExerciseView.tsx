@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Swal from 'sweetalert2';
 import FinishModuleButton from '../../components/FinishModuleButton';
+import VsCodeSqlEditor from '@/components/VsCodeSqlEditor';
 
 export default function ExerciseView({ 
   modulId, 
@@ -26,6 +27,7 @@ export default function ExerciseView({
 }) {
   const router = useRouter();
   const [answers, setAnswers] = useState<Record<string, string>>(existingData?.answers || {});
+  const [results, setResults] = useState<Record<string, any>>(existingData?.results || {});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [score, setScore] = useState<number | null>(existingData?.score !== undefined ? existingData.score : null);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -42,9 +44,15 @@ export default function ExerciseView({
   React.useEffect(() => {
     const answeredIds = Object.keys(answers).filter(k => answers[k] !== undefined && answers[k].trim() !== '');
     window.dispatchEvent(new CustomEvent('exercise-state-updated', { 
-      detail: { answeredIds, doubtfulIds: doubtful, activeIdx }
+      detail: {
+        answeredIds,
+        doubtfulIds: doubtful,
+        activeIdx,
+        results,
+        isSubmitted: score !== null,
+      }
     }));
-  }, [answers, doubtful, activeIdx]);
+  }, [answers, doubtful, activeIdx, results, score]);
 
   const handleOptionChange = (questionId: string, optionId: string) => {
     setAnswers(prev => ({ ...prev, [questionId]: optionId }));
@@ -94,31 +102,128 @@ export default function ExerciseView({
     }
 
     setIsSubmitting(true);
-    // Basic client-side grading (In a real app, this should be done on the server)
     let totalScore = 0;
     let maxScore = 0;
 
-    subBab.questions.forEach((q: any) => {
-      maxScore += q.scoreWeight || 10;
+    const generateInitSchema = (tables: any[]) => {
+      let schema = "";
+      if (tables && tables.length > 0) {
+        tables.forEach((t: any) => {
+          if (!t.name) return;
+          const validCols = (t.columns || []).filter((c: any) => c.name);
+          if (validCols.length === 0) return;
+
+          const colDefs = validCols.map((c: any) => {
+            if (c.ai) {
+              return `${c.name} INTEGER PRIMARY KEY AUTOINCREMENT`;
+            }
+            let def = `${c.name} ${c.type}`;
+            if (c.length && !['DATE', 'DATETIME', 'BOOLEAN', 'TEXT'].includes(c.type)) {
+              def += `(${c.length})`;
+            }
+            if (c.pk) def += ' PRIMARY KEY';
+            return def;
+          });
+          schema += `CREATE TABLE ${t.name} (${colDefs.join(', ')});\n`;
+          if (t.rows && t.rows.length > 0) {
+            t.rows.forEach((row: any) => {
+              const colNames = validCols.map((c: any) => c.name).join(', ');
+              const vals = validCols.map((c: any) => {
+                const val = row[c.id];
+                if (val === undefined || val === '') return 'NULL';
+                if (c.type.includes('INT') || c.type.includes('BOOLEAN')) return val;
+                return `'${String(val).replace(/'/g, "''")}'`;
+              }).join(', ');
+              schema += `INSERT INTO ${t.name} (${colNames}) VALUES (${vals});\n`;
+            });
+          }
+          schema += '\n';
+        });
+      }
+      return schema;
+    };
+
+    const normalizeSqlString = (sql: string) =>
+      (sql || '')
+        .trim()
+        .toLowerCase()
+        .replace(/;\s*$/g, '')
+        .replace(/\s*([,=<>!()+-])\s*/g, '$1')
+        .replace(/\s+/g, ' ');
+
+    const evaluationResults: Record<string, any> = {};
+
+    for (const q of subBab.questions) {
+      const weight = Number(q.scoreWeight) || 10;
+      maxScore += weight;
       const userAnswer = answers[q.id];
 
       if (q.type === 'multiple_choice') {
-        const correctOption = q.options.find((o: any) => o.isCorrect);
-        if (correctOption && userAnswer === correctOption.id) {
-          totalScore += q.scoreWeight || 10;
-        }
+        const correctOption = q.options?.find((o: any) => o.isCorrect);
+        const isCorrect = Boolean(correctOption && userAnswer && userAnswer === correctOption.id);
+        const earned = isCorrect ? weight : 0;
+        totalScore += earned;
+        evaluationResults[q.id] = {
+          isCorrect,
+          earnedScore: earned,
+          maxScore: weight,
+          correctAnswer: correctOption?.id || null,
+          feedback: isCorrect ? "Jawaban Anda Benar!" : "Jawaban Anda Kurang Tepat.",
+        };
       } else if (q.type === 'sql_query') {
-        // Simple string matching for SQL query
-        const normalizedAnswer = (userAnswer || '').trim().toLowerCase().replace(/\s+/g, ' ');
-        const normalizedKey = (q.sqlAnswerKey || '').trim().toLowerCase().replace(/\s+/g, ' ');
-        
-        if (normalizedAnswer === normalizedKey) {
-          totalScore += q.scoreWeight || 10;
+        if (!userAnswer || !userAnswer.trim()) {
+          evaluationResults[q.id] = {
+            isCorrect: false,
+            earnedScore: 0,
+            maxScore: weight,
+            feedback: "Soal tidak dijawab.",
+          };
+          continue;
         }
-      }
-    });
 
-    const finalScore = Math.round((totalScore / maxScore) * 100);
+        let isCorrect = false;
+        let feedbackMsg = "Hasil kueri SQL belum sesuai dengan kunci jawaban.";
+        try {
+          const initSchemaSql = generateInitSchema(q.tables || []);
+          const evalRes = await fetch('/api/latihan-soal/evaluate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              studentQuery: userAnswer,
+              answerKeyQuery: q.sqlAnswerKey,
+              initSchemaSql,
+              answerTables: q.answerTables || [],
+              queryType: q.queryType || 'DQL',
+            })
+          });
+          const evalData = await evalRes.json();
+          if (evalData.isCorrect) {
+            isCorrect = true;
+          }
+          if (evalData.message) {
+            feedbackMsg = evalData.message;
+          }
+        } catch (err) {
+          // Fallback ke normalisasi string SQL jika request ke evaluator gagal
+        }
+
+        if (!isCorrect && normalizeSqlString(userAnswer) === normalizeSqlString(q.sqlAnswerKey)) {
+          isCorrect = true;
+          feedbackMsg = "Jawaban Benar! Query SQL identik dengan kunci jawaban.";
+        }
+
+        const earned = isCorrect ? weight : 0;
+        totalScore += earned;
+        evaluationResults[q.id] = {
+          isCorrect,
+          earnedScore: earned,
+          maxScore: weight,
+          feedback: feedbackMsg,
+        };
+      }
+    }
+
+    const finalScore = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
     
     // Save to database
     try {
@@ -129,15 +234,17 @@ export default function ExerciseView({
           modul_id: modulId,
           sub_bab_id: subBab._id?.toString() || `${currentBabIdx}-${currentSubIdx}`,
           score: finalScore,
-          answers
+          answers,
+          results: evaluationResults,
         })
       });
       const data = await res.json();
       if (data.success) {
         setScore(finalScore);
+        setResults(evaluationResults);
         await Swal.fire({
           title: 'Latihan Selesai!',
-          text: `Nilai Anda: ${finalScore}`,
+          html: `Jawaban Anda berhasil dinilai otomatis.<br/>Nilai Akhir: <b style="font-size:22px;color:#0D47A1">${finalScore} / 100</b><br/><span style="font-size:12px;color:#64748b">Status: <b>${finalScore >= 70 ? "Lulus" : "Perlu Perbaikan"}</b></span>`,
           icon: finalScore >= 70 ? 'success' : 'warning',
           confirmButtonColor: '#2196F3'
         });
@@ -151,30 +258,30 @@ export default function ExerciseView({
   };
 
   return (
-    <div className="flex flex-col h-full bg-white animate-in fade-in duration-300">
-      <div className="p-6 sm:p-8 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+    <div className="flex flex-col min-h-full bg-white animate-in fade-in duration-300">
+      <div className="px-6 py-4 sm:px-8 sm:py-5 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center shrink-0">
         <div>
-          <div className="flex items-center gap-3 mb-3">
-            <span className="bg-orange-100 text-orange-800 text-xs font-bold px-2.5 py-1 rounded-sm border border-orange-200">
+          <div className="flex items-center gap-3 mb-1.5">
+            <span className="bg-orange-100 text-orange-800 text-xs font-bold px-2.5 py-0.5 rounded-sm border border-orange-200">
               Latihan Soal
             </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 mb-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-800">
             {subBab.title}
           </h1>
-          <p className="text-slate-600">Kerjakan soal-soal di bawah ini dengan benar.</p>
+          <p className="text-xs sm:text-sm text-slate-600 mt-0.5">Kerjakan soal-soal di bawah ini dengan benar.</p>
         </div>
         <button 
           onClick={() => router.push(`/siswa/modul/${modulId}?bab=${currentBabIdx}&sub=${currentSubIdx}`)}
-          className="px-4 py-2 text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-sm transition-colors shadow-sm"
+          className="px-4 py-2 text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-sm transition-colors shadow-sm shrink-0"
         >
           Kembali ke Materi
         </button>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+      <div className="flex-1 flex flex-col">
         {/* Konten Soal */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-8 flex flex-col gap-10 scroll-smooth">
+        <div className="flex-1 p-5 sm:p-6 flex flex-col gap-6">
           {(!subBab.questions || subBab.questions.length === 0) ? (
             <div className="text-center py-12 text-slate-500 bg-slate-50 rounded-sm border border-slate-200">
               Tidak ada soal yang tersedia untuk latihan ini.
@@ -185,7 +292,7 @@ export default function ExerciseView({
               const index = activeIdx;
               if (!q) return null;
               return (
-                <div id={`question-${index}`} key={q.id} className="bg-white border border-slate-200 rounded-sm shadow-sm overflow-hidden scroll-mt-6">
+                <div id={`question-${index}`} key={q.id} className="bg-white border border-slate-200 rounded-sm shadow-sm shrink-0 scroll-mt-6">
                 <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                   <span className="font-bold text-slate-800">Soal {index + 1}</span>
                   <div className="flex items-center gap-4">
@@ -201,55 +308,140 @@ export default function ExerciseView({
                       </label>
                     )}
                     <span className="text-xs font-semibold px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded-sm">
-                      Bobot: {q.scoreWeight || 10}
+                      Bobot: {q.scoreWeight || 10} Poin
                     </span>
                   </div>
                 </div>
-                <div className="p-6">
-                  <div 
-                    className="prose prose-sm max-w-none mb-6" 
-                    dangerouslySetInnerHTML={{ __html: q.instruction }} 
-                  />
-                  
-                  {q.type === 'multiple_choice' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {q.options?.map((opt: any, oIdx: number) => (
-                        <label 
-                          key={opt.id} 
-                          className={`flex items-start gap-3 p-3 border rounded-sm cursor-pointer transition-colors ${
-                            answers[q.id] === opt.id 
-                              ? 'border-[#2196F3] bg-blue-50/50' 
-                              : 'border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          <input 
-                            type="radio" 
-                            name={`question_${q.id}`} 
-                            value={opt.id}
-                            checked={answers[q.id] === opt.id}
-                            onChange={() => handleOptionChange(q.id, opt.id)}
-                            className="mt-1 w-4 h-4 text-[#2196F3] shrink-0"
-                            disabled={score !== null}
-                          />
-                          <div className="flex-1 text-sm text-slate-700">
-                            <span className="font-bold mr-2">{String.fromCharCode(65 + oIdx)}.</span>
-                            {opt.text}
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  )}
 
-                  {q.type === 'sql_query' && (
-                    <div className="space-y-4">
+                {/* Banner Penilaian Hasil Latihan */}
+                {score !== null && results[q.id] && (
+                  <div
+                    className={`mx-6 mt-4 p-3.5 rounded-sm border flex items-center justify-between text-xs animate-in fade-in ${
+                      results[q.id].isCorrect
+                        ? "bg-emerald-50 border-emerald-300 text-emerald-950"
+                        : "bg-rose-50 border-rose-300 text-rose-950"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-xs text-white shrink-0 ${
+                          results[q.id].isCorrect ? "bg-emerald-600" : "bg-rose-600"
+                        }`}
+                      >
+                        {results[q.id].isCorrect ? "✓" : "✕"}
+                      </span>
+                      <div>
+                        <span className="font-bold text-sm block">
+                          {results[q.id].isCorrect ? "Jawaban Anda Benar!" : "Jawaban Kurang Tepat"}
+                        </span>
+                        <span className="opacity-90 block mt-0.5">
+                          {results[q.id].feedback || (results[q.id].isCorrect ? "Hasil query sesuai dengan kunci jawaban." : "Hasil query belum sesuai dengan kunci jawaban.")}
+                        </span>
+                      </div>
+                    </div>
+                    <span
+                      className={`px-2.5 py-1 font-extrabold rounded-sm text-xs shrink-0 ${
+                        results[q.id].isCorrect
+                          ? "bg-emerald-200 text-emerald-900 border border-emerald-300"
+                          : "bg-rose-200 text-rose-900 border border-rose-300"
+                      }`}
+                    >
+                      {results[q.id].isCorrect
+                        ? `+${results[q.id].earnedScore || q.scoreWeight || 10} Poin`
+                        : `0 / ${q.scoreWeight || 10} Poin`}
+                    </span>
+                  </div>
+                )}
+
+                {q.type === 'multiple_choice' ? (
+                  <div className="p-6">
+                    <div 
+                      className="prose prose-sm max-w-none mb-6" 
+                      dangerouslySetInnerHTML={{ __html: q.instruction }} 
+                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {q.options?.map((opt: any, oIdx: number) => {
+                        const isSelected = answers[q.id] === opt.id;
+                        const isCorrectOpt = opt.isCorrect || opt.id === results[q.id]?.correctAnswer;
+                        let optStyle = "border-slate-200 hover:bg-slate-50";
+                        if (score !== null) {
+                          if (isCorrectOpt) {
+                            optStyle = "border-emerald-500 bg-emerald-50/80 text-emerald-950 font-medium";
+                          } else if (isSelected && !isCorrectOpt) {
+                            optStyle = "border-rose-400 bg-rose-50/80 text-rose-950";
+                          } else {
+                            optStyle = "border-slate-200 bg-slate-50/40 opacity-70";
+                          }
+                        } else if (isSelected) {
+                          optStyle = "border-[#2196F3] bg-blue-50/50";
+                        }
+
+                        return (
+                          <label 
+                            key={opt.id} 
+                            className={`flex items-start justify-between gap-3 p-3 border rounded-sm transition-colors ${score !== null ? 'cursor-default' : 'cursor-pointer'} ${optStyle}`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <input 
+                                type="radio" 
+                                name={`question_${q.id}`} 
+                                value={opt.id}
+                                checked={isSelected}
+                                onChange={() => handleOptionChange(q.id, opt.id)}
+                                className="mt-1 w-4 h-4 text-[#2196F3] shrink-0"
+                                disabled={score !== null}
+                              />
+                              <div className="flex-1 text-sm text-slate-700">
+                                <span className="font-bold mr-2">{String.fromCharCode(65 + oIdx)}.</span>
+                                {opt.text}
+                              </div>
+                            </div>
+                            {score !== null && (
+                              <div className="text-[11px] font-bold shrink-0 ml-2 mt-0.5">
+                                {isCorrectOpt && (
+                                  <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-sm">
+                                    ✓ Kunci Benar
+                                  </span>
+                                )}
+                                {isSelected && !isCorrectOpt && (
+                                  <span className="text-rose-700 bg-rose-100 px-2 py-0.5 rounded-sm">
+                                    ✕ Pilihan Anda
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-12">
+                    {/* BAGIAN KIRI: SOAL & SKEMA TABEL REFERENSI */}
+                    <div className="lg:col-span-5 p-6 border-b lg:border-b-0 lg:border-r border-slate-200 bg-slate-50/30 flex flex-col gap-5">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2.5">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-[#0D47A1] bg-blue-50 px-2 py-0.5 rounded-sm border border-blue-200">
+                            Instruksi Soal
+                          </span>
+                          <span className="text-[11px] font-semibold text-slate-500">
+                            Tipe: {q.queryType || 'DQL'}
+                          </span>
+                        </div>
+                        <div 
+                          className="prose prose-sm max-w-none text-slate-800" 
+                          dangerouslySetInnerHTML={{ __html: q.instruction }} 
+                        />
+                      </div>
+
                       {q.tables && q.tables.filter((t: any) => t.name && t.columns?.some((c: any) => c.name)).length > 0 && (
-                        <div className="space-y-3">
+                        <div className="space-y-3 pt-3 border-t border-slate-200">
                           <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Skema & Data Tabel Referensi</h4>
                           <div className="grid grid-cols-1 gap-3">
                             {q.tables.filter((t: any) => t.name && t.columns?.some((c: any) => c.name)).map((tbl: any, tIdx: number) => {
                               const validCols = (tbl.columns || []).filter((c: any) => c.name);
                               return (
-                                <div key={tbl.id || tIdx} className="border border-slate-200 rounded-sm overflow-hidden bg-slate-50/50">
+                                <div key={tbl.id || tIdx} className="border border-slate-200 rounded-sm overflow-hidden bg-white shadow-xs">
                                   <div className="bg-slate-100 px-3 py-2 border-b border-slate-200 flex items-center justify-between">
                                     <span className="text-xs font-semibold text-slate-800 font-mono">Tabel: {tbl.name}</span>
                                     <span className="text-[11px] text-slate-500">{validCols.length} Kolom</span>
@@ -300,20 +492,31 @@ export default function ExerciseView({
                           </div>
                         </div>
                       )}
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">Jawaban Query SQL</label>
-                        <textarea 
-                          rows={5}
-                          placeholder="Tuliskan query SQL Anda di sini..."
-                          value={answers[q.id] || ''}
-                          onChange={(e) => handleSqlChange(q.id, e.target.value)}
-                          disabled={score !== null}
-                          className="w-full px-4 py-3 border border-slate-700 rounded-sm focus:outline-none focus:border-[#2196F3] font-mono text-sm bg-slate-900 text-green-400 disabled:opacity-75"
-                        />
-                      </div>
                     </div>
-                  )}
-                </div>
+
+                    {/* BAGIAN KANAN: EDITOR KODE SQL (ATAS) & TERMINAL HASIL JAWABAN (BAWAH) */}
+                    <div className="lg:col-span-7 p-5 sm:p-6 bg-white flex flex-col">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                          Editor Kode SQL &amp; Terminal Output
+                        </label>
+                        <span className="text-[11px] text-slate-500">
+                          Klik <strong>▶ Jalankan Query</strong> untuk melihat hasil di Terminal bawah
+                        </span>
+                      </div>
+                      <VsCodeSqlEditor
+                        value={answers[q.id] || ''}
+                        onChange={(val) => handleSqlChange(q.id, val)}
+                        disabled={score !== null}
+                        queryType={q.queryType || 'DQL'}
+                        tables={q.tables || []}
+                        answerTables={q.answerTables || []}
+                        sqlAnswerKey={q.sqlAnswerKey || ''}
+                        fileName={`soal_${index + 1}.sql`}
+                      />
+                    </div>
+                  </div>
+                )}
                 </div>
               );
             })()
@@ -337,8 +540,11 @@ export default function ExerciseView({
                <div /> /* Spacer */
              )}
              {score !== null && (
-               <div className="text-sm font-bold text-slate-800">
-                 Nilai: <span className={score >= 70 ? 'text-green-600' : 'text-red-500'}>{score}</span>/100
+               <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                 <span>Nilai:</span>
+                 <span className={`px-2.5 py-1 rounded-sm text-xs font-extrabold ${score >= 70 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                   {score} / 100 ({score >= 70 ? 'Lulus' : 'Perlu Bimbingan'})
+                 </span>
                </div>
              )}
           </div>

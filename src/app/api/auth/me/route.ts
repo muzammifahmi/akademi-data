@@ -26,63 +26,87 @@ export async function GET() {
     let nisn_nip = '';
     let kelas = '';
     let sekolah_id: string | null = null;
+    let nama_sekolah = '';
+    let npsn_sekolah = (payload.npsn as string) || '';
+    const effectiveRole = payload.role === 'superadmin' ? 'admin' : payload.role;
 
-    if (payload.role === 'admin' && payload.npsn) {
+    if (effectiveRole === 'admin' && payload.npsn) {
       const sekolah = await Sekolah.findById(payload.id);
       if (sekolah) {
-        name = sekolah.admin_nama;
-        subtitle = `Admin Sekolah (${sekolah.nama_sekolah})`;
+        name = sekolah.admin_nama || 'Administrator';
+        subtitle = `Administrator (${sekolah.nama_sekolah})`;
+        sekolah_id = sekolah._id.toString();
+        nama_sekolah = sekolah.nama_sekolah;
+        npsn_sekolah = sekolah.npsn;
       }
     } else {
       const user = await User.findById(payload.id);
       if (user) {
         name = user.name;
-        if (user.role === 'superadmin') subtitle = 'Super Admin Global';
-        else if (user.role === 'guru') subtitle = 'Pengajar / Guru';
-        else if (user.role === 'siswa') subtitle = 'Siswa Aktif';
-        else if (user.role === 'admin') subtitle = 'Administrator';
-        
         nisn_nip = user.nisn_nip || '';
         kelas = user.kelas || '';
+        sekolah_id = user.sekolah_id ? user.sekolah_id.toString() : null;
 
-        // Jika kelas adalah string ObjectId, coba ambil nama kelasnya
-        if (kelas && kelas.length === 24) {
-           try {
-             const Kelas = (await import('@/models/Kelas')).default;
-             const kelasDoc = await Kelas.findById(kelas);
-             if (kelasDoc) {
-               kelas = kelasDoc.nama_kelas;
-             }
-           } catch (err) {
-             console.error("Gagal mengambil nama kelas", err);
-           }
+        if (sekolah_id) {
+          try {
+            const sekDoc = await Sekolah.findById(sekolah_id);
+            if (sekDoc) {
+              nama_sekolah = sekDoc.nama_sekolah;
+              npsn_sekolah = sekDoc.npsn;
+            }
+          } catch (e) {
+            // ignore
+          }
         }
 
-        sekolah_id = user.sekolah_id ? user.sekolah_id.toString() : null;
+        if (effectiveRole === 'admin') {
+          subtitle = 'Administrator Sistem';
+        } else if (effectiveRole === 'guru') {
+          subtitle = nama_sekolah ? `Guru (${nama_sekolah})` : 'Pengajar / Guru';
+        } else if (effectiveRole === 'siswa') {
+          subtitle = nama_sekolah ? `Siswa (${nama_sekolah})` : 'Siswa Aktif';
+        }
+
+        if (kelas && kelas.length === 24) {
+          try {
+            const Kelas = (await import('@/models/Kelas')).default;
+            const kelasDoc = await Kelas.findById(kelas);
+            if (kelasDoc) {
+              kelas = kelasDoc.nama_kelas;
+            }
+          } catch (err) {
+            console.error('Gagal mengambil nama kelas', err);
+          }
+        }
       }
     }
 
     if (!name) {
-      // User is not found in the database (deleted or invalid)
       const response = NextResponse.json({ error: 'User not found' }, { status: 401 });
       response.cookies.delete('auth_token');
       return response;
     }
 
-    const initials = name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
+    const initials = name
+      .split(' ')
+      .map((n: string) => n[0])
+      .join('')
+      .substring(0, 2)
+      .toUpperCase();
 
     return NextResponse.json({
+      id: payload.id,
       name,
       email: payload.email,
-      role: payload.role,
+      role: effectiveRole,
       initials,
       subtitle,
       nisn_nip,
       kelas,
       sekolah_id,
-      npsn: payload.npsn || null
+      nama_sekolah,
+      npsn: npsn_sekolah || null,
     });
-
   } catch (error) {
     return NextResponse.json({ error: 'Failed to authenticate' }, { status: 401 });
   }

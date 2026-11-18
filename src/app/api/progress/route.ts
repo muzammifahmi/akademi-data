@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongoose';
 import Progress from '@/models/Progress';
+import Modul from '@/models/Modul';
+import { extractModulSubBabIds } from '@/lib/progress-sync';
 import { jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
 import mongoose from 'mongoose';
@@ -36,28 +38,39 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Sub Bab ID diperlukan' }, { status: 400 });
     }
 
-    // Find existing progress or create new
     let progress: any = await Progress.findOne({ user_id: userId, modul_id });
-    
+
     if (!progress) {
       progress = new Progress({
         user_id: userId,
         modul_id: modul_id,
         completed_subbabs: [],
-        status: 'Sedang Dipelajari'
+        status: 'Sedang Dipelajari',
       });
     }
 
-    // Add sub_bab_id to array if not already there
     if (!progress.completed_subbabs) {
       progress.completed_subbabs = [];
     }
-    
+
     if (!progress.completed_subbabs.includes(sub_bab_id)) {
       progress.completed_subbabs.push(sub_bab_id);
     }
 
-    if (is_last) {
+    // Periksa langsung terhadap jumlah seluruh sub-bab terkini pada Modul
+    const modulDoc = await Modul.findById(modul_id).lean();
+    if (modulDoc) {
+      const validSubBabIds = extractModulSubBabIds(modulDoc);
+      progress.completed_subbabs = validSubBabIds.filter((id) =>
+        progress.completed_subbabs.includes(id)
+      );
+      if (validSubBabIds.length > 0 && progress.completed_subbabs.length === validSubBabIds.length) {
+        progress.status = 'Selesai';
+        progress.completedAt = new Date();
+      } else {
+        progress.status = 'Sedang Dipelajari';
+      }
+    } else if (is_last) {
       progress.status = 'Selesai';
       progress.completedAt = new Date();
     }
@@ -66,7 +79,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, message: 'Progres diperbarui' });
   } catch (error: any) {
-    console.error("Gagal menyimpan progres:", error);
+    console.error('Gagal menyimpan progres:', error);
     return NextResponse.json({ success: false, error: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }

@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { modul_id, sub_bab_id, score, answers } = body;
+    const { modul_id, sub_bab_id, score, answers, results } = body;
 
     const userId = payload.id as string;
 
@@ -59,12 +59,16 @@ export async function POST(req: Request) {
        // Update existing
        progress.exercise_scores[existingScoreIndex].score = score;
        progress.exercise_scores[existingScoreIndex].answers = answers;
+       if (results) {
+         progress.exercise_scores[existingScoreIndex].results = results;
+       }
     } else {
        // Add new
        progress.exercise_scores.push({
           subbab_id: sub_bab_id,
           score,
-          answers
+          answers,
+          results: results || {}
        });
     }
 

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongoose';
 import Modul from '@/models/Modul';
+import Progress from '@/models/Progress';
+import { syncStudentProgressWithModul } from '@/lib/progress-sync';
 import { jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
 
@@ -20,7 +22,7 @@ export async function GET(
     }
 
     const modul = await Modul.findById(id).lean();
-    
+
     if (!modul) {
       return NextResponse.json({ success: false, error: 'Modul not found' }, { status: 404 });
     }
@@ -34,20 +36,20 @@ export async function GET(
         const secret = new TextEncoder().encode(JWT_SECRET);
         const { payload } = await jwtVerify(token, secret);
         if (payload.role === 'siswa') {
-          const Progress = (await import('@/models/Progress')).default;
           const progress = await Progress.findOne({ user_id: payload.id as string, modul_id: id }).lean();
           if (progress) {
-             completedSubBabs = (progress as any).completed_subbabs || [];
+            const synced = await syncStudentProgressWithModul(modul, progress);
+            completedSubBabs = synced.completedSubBabIds;
           }
         }
       } catch (e) {
-         // ignore
+        // ignore
       }
     }
 
     return NextResponse.json({ success: true, data: { ...modul, completed_subbabs: completedSubBabs } });
   } catch (error) {
-    console.error("Failed to fetch modul:", error);
+    console.error('Failed to fetch modul:', error);
     return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });
   }
 }
@@ -87,7 +89,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, message: 'Modul berhasil dihapus' });
   } catch (error) {
-    console.error("Failed to delete modul:", error);
+    console.error('Failed to delete modul:', error);
     return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });
   }
 }
@@ -115,13 +117,13 @@ export async function PUT(
     const resolvedParams = await params;
     const { id } = resolvedParams;
     const body = await req.json();
-    
+
     if (!id) {
       return NextResponse.json({ success: false, error: 'Modul ID required' }, { status: 400 });
     }
 
     const { judul, tujuan, babs, status } = body;
-    
+
     const updatedModul = await Modul.findByIdAndUpdate(
       id,
       { judul, tujuan, babs, status },
@@ -132,9 +134,15 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Modul not found' }, { status: 404 });
     }
 
+    // Sinkronkan seluruh progres siswa pada modul ini setelah modul direvisi oleh guru
+    const progressDocs = await Progress.find({ modul_id: id }).lean();
+    for (const prog of progressDocs) {
+      await syncStudentProgressWithModul(updatedModul, prog);
+    }
+
     return NextResponse.json({ success: true, data: updatedModul, message: 'Modul berhasil diperbarui' });
   } catch (error) {
-    console.error("Failed to update modul:", error);
+    console.error('Failed to update modul:', error);
     return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });
   }
 }

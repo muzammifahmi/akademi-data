@@ -1,0 +1,52 @@
+{
+  "judul": "Ujian Otomasi Selenium: SQL Terapan",
+  "durasi_menit": 60,
+  "proctoring": true,
+  "status": "Aktif",
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "instruction": "Perintah SQL untuk mengambil data dari tabel adalah...",
+      "options": [
+        {
+          "id": "a",
+          "text": "SELECT",
+          "isCorrect": true
+        },
+        {
+          "id": "b",
+          "text": "GET",
+          "isCorrect": false
+        }
+      ],
+      "scoreWeight": 33
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "instruction": "Klausa untuk menyaring data adalah...",
+      "options": [
+        {
+          "id": "a",
+          "text": "WHERE",
+          "isCorrect": true
+        },
+        {
+          "id": "b",
+          "text": "FILTER",
+          "isCorrect": false
+        }
+      ],
+      "scoreWeight": 33
+    },
+    {
+      "id": "q3",
+      "type": "sql_query",
+      "queryType": "DQL",
+      "instruction": "Tampilkan nama siswa dari tabel siswa.",
+      "sqlAnswerKey": "SELECT nama FROM siswa;",
+      "scoreWeight": 34
+    }
+  ]
+}

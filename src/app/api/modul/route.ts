@@ -27,6 +27,22 @@ export async function GET(req: Request) {
     const kelas_id = searchParams.get('kelas_id');
 
     if (!kelas_id) {
+      if (payload.role === 'guru') {
+        const Kelas = (await import('@/models/Kelas')).default;
+        const guruKelas = await Kelas.find({ guru_pengampu: String(payload.id) } as any).select('_id nama_kelas kode_kelas').lean();
+        const kelasIds = guruKelas.map((k: any) => k._id);
+        const kelasMap = new Map(guruKelas.map((k: any) => [k._id.toString(), k]));
+        const moduls = await Modul.find({ kelas_id: { $in: kelasIds } }).sort({ createdAt: -1 }).lean();
+        const enriched = moduls.map((m: any) => {
+          const kInfo: any = kelasMap.get(m.kelas_id?.toString()) || {};
+          return {
+            ...m,
+            nama_kelas: kInfo.nama_kelas || '-',
+            kode_kelas: kInfo.kode_kelas || '-',
+          };
+        });
+        return NextResponse.json({ success: true, data: enriched, classes: guruKelas });
+      }
       return NextResponse.json({ success: false, error: 'kelas_id required' }, { status: 400 });
     }
 

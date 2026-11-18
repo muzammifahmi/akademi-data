@@ -25,42 +25,50 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { kodeKelas, nisn, sekolah_id } = body;
+    const { kodeKelas } = body;
 
-    if (!kodeKelas || !nisn || !sekolah_id) {
-      return NextResponse.json({ success: false, error: 'Kode kelas, NISN, dan Sekolah wajib diisi.' }, { status: 400 });
+    if (!kodeKelas || !String(kodeKelas).trim()) {
+      return NextResponse.json({ success: false, error: 'Kode kelas wajib diisi.' }, { status: 400 });
     }
 
-    // Cari kelas berdasarkan kode_kelas dan pastikan dari sekolah yang dipilih
-    const kelasDoc = await Kelas.findOne({ kode_kelas: kodeKelas, status: 'Aktif', sekolah_id: sekolah_id });
+    const normalizedCode = String(kodeKelas).trim().toUpperCase();
+
+    // Cari kelas berdasarkan kode_kelas yang aktif
+    const kelasDoc = await Kelas.findOne({ kode_kelas: normalizedCode, status: 'Aktif' });
 
     if (!kelasDoc) {
-      return NextResponse.json({ success: false, error: 'Kode kelas tidak valid, kelas tidak aktif, atau tidak berasal dari sekolah yang dipilih.' }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: 'Kode kelas tidak ditemukan atau kelas sudah tidak aktif.' },
+        { status: 404 }
+      );
     }
 
-    // Update data user
+    // Update data user: hubungkan ke kelas dan sekolah dari kelas tersebut
     const updatedUser = await User.findByIdAndUpdate(
       payload.id,
       {
-        nisn_nip: nisn,
-        kelas: kelasDoc._id,
-        sekolah_id: kelasDoc.sekolah_id
+        kelas: kelasDoc._id.toString(),
+        sekolah_id: kelasDoc.sekolah_id,
       },
       { new: true }
     );
 
     if (!updatedUser) {
-      return NextResponse.json({ success: false, error: 'Gagal memperbarui data profil siswa.' }, { status: 500 });
+      return NextResponse.json({ success: false, error: 'Gagal memperbarui data kelas siswa.' }, { status: 500 });
     }
 
-    // Increment jumlah siswa di kelas tersebut
+    // Sinkronkan jumlah siswa di kelas tersebut
+    const studentCount = await User.countDocuments({ role: 'siswa', kelas: kelasDoc._id.toString() });
     await Kelas.findByIdAndUpdate(kelasDoc._id, {
-      $inc: { jumlah_siswa: 1 }
+      $set: { jumlah_siswa: studentCount },
     });
 
-    return NextResponse.json({ success: true, message: 'Berhasil bergabung dengan kelas!' });
+    return NextResponse.json({
+      success: true,
+      message: `Berhasil bergabung ke kelas ${kelasDoc.nama_kelas}!`,
+    });
   } catch (error) {
-    console.error("Failed to join class:", error);
+    console.error('Failed to join class:', error);
     return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });
   }
 }

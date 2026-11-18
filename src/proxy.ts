@@ -8,6 +8,11 @@ export async function proxy(request: NextRequest) {
   const token = request.cookies.get('auth_token')?.value;
   const path = request.nextUrl.pathname;
 
+  // Redirect legacy /superadmin routes ke /admin/sekolah
+  if (path.startsWith('/superadmin')) {
+    return NextResponse.redirect(new URL('/admin/sekolah', request.url));
+  }
+
   // 1. Jika pengguna mencoba mengakses halaman login ('/')
   if (path === '/') {
     if (token) {
@@ -15,59 +20,54 @@ export async function proxy(request: NextRequest) {
         const secret = new TextEncoder().encode(JWT_SECRET);
         const { payload } = await jwtVerify(token, secret);
         
-        // Auto-redirect jika token valid
-        if (payload.role === 'superadmin') return NextResponse.redirect(new URL('/superadmin/sekolah', request.url));
-        if (payload.role === 'admin') return NextResponse.redirect(new URL('/admin', request.url));
-        if (payload.role === 'guru') return NextResponse.redirect(new URL('/guru', request.url));
-        if (payload.role === 'siswa') return NextResponse.redirect(new URL('/siswa', request.url));
+        // Auto-redirect berdasarkan 3 role utama (admin, guru, siswa)
+        if (payload.role === 'admin' || payload.role === 'superadmin') {
+          return NextResponse.redirect(new URL('/admin/dashboard', request.url));
+        }
+        if (payload.role === 'guru') {
+          return NextResponse.redirect(new URL('/guru', request.url));
+        }
+        if (payload.role === 'siswa') {
+          return NextResponse.redirect(new URL('/siswa', request.url));
+        }
       } catch (error) {
-        // Token tidak valid/expired, hapus cookie dan biarkan akses halaman login
         const response = NextResponse.next();
         response.cookies.delete('auth_token');
         return response;
       }
     }
-    return NextResponse.next(); // Biarkan masuk halaman login jika belum login
+    return NextResponse.next();
   }
 
-  // 2. Proteksi Halaman Berdasarkan Peran (Role-Based Route Protection)
-  
-  // Fungsi utilitas untuk verifikasi peran
-  const requireRole = async (requiredRole: string) => {
+  // 2. Proteksi Halaman Berdasarkan 3 Peran (Admin, Guru, Siswa)
+  const requireRole = async (allowedRoles: string[]) => {
     if (!token) return NextResponse.redirect(new URL('/', request.url));
     try {
       const secret = new TextEncoder().encode(JWT_SECRET);
       const { payload } = await jwtVerify(token, secret);
-      if (payload.role !== requiredRole) {
-        // Jika rolenya berbeda dari yang diharuskan, tolak
+      if (!allowedRoles.includes(String(payload.role))) {
         return NextResponse.redirect(new URL('/', request.url));
       }
-      return null; // OK
+      return null;
     } catch (error) {
-      // Token tidak valid
       const response = NextResponse.redirect(new URL('/', request.url));
       response.cookies.delete('auth_token');
       return response;
     }
   };
 
-  if (path.startsWith('/superadmin')) {
-    const errorResponse = await requireRole('superadmin');
-    if (errorResponse) return errorResponse;
-  }
-
   if (path.startsWith('/admin')) {
-    const errorResponse = await requireRole('admin');
+    const errorResponse = await requireRole(['admin', 'superadmin']);
     if (errorResponse) return errorResponse;
   }
 
   if (path.startsWith('/guru')) {
-    const errorResponse = await requireRole('guru');
+    const errorResponse = await requireRole(['guru']);
     if (errorResponse) return errorResponse;
   }
 
   if (path.startsWith('/siswa')) {
-    const errorResponse = await requireRole('siswa');
+    const errorResponse = await requireRole(['siswa']);
     if (errorResponse) return errorResponse;
   }
 

@@ -38,6 +38,7 @@ const QuestionSchema = new Schema({
   queryType: { type: String, default: "DQL" },
   targetTable: { type: String, default: "" },
   tables: { type: Array, default: [] },
+  answerTables: { type: Array, default: [] },
   scoreWeight: { type: Number, default: 10 },
   options: [OptionSchema]
 });

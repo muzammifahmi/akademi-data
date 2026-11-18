@@ -13,8 +13,11 @@ export default function Menu({ isSidebarOpen }: MenuProps) {
   const searchParams = useSearchParams();
   const [isLocked, setIsLocked] = useState(true);
   const [moduleData, setModuleData] = useState<any>(null);
+  const [ujianData, setUjianData] = useState<any>(null);
   const [answeredQuestions, setAnsweredQuestions] = useState<string[]>([]);
   const [doubtfulQuestions, setDoubtfulQuestions] = useState<string[]>([]);
+  const [results, setResults] = useState<Record<string, any>>({});
+  const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [activeQuestionIdx, setActiveQuestionIdx] = useState(0);
 
   useEffect(() => {
@@ -22,15 +25,19 @@ export default function Menu({ isSidebarOpen }: MenuProps) {
       setAnsweredQuestions(e.detail.answeredIds || []);
       setDoubtfulQuestions(e.detail.doubtfulIds || []);
       setActiveQuestionIdx(e.detail.activeIdx || 0);
+      setResults(e.detail.results || {});
+      setIsSubmitted(Boolean(e.detail.isSubmitted));
     };
     window.addEventListener('exercise-state-updated', handleUpdate);
     return () => window.removeEventListener('exercise-state-updated', handleUpdate);
   }, []);
 
-  // Cek apakah sedang berada di dalam sebuah modul pembelajaraan (misal: /siswa/modul/1)
+  // Cek apakah sedang berada di dalam sebuah modul pembelajaran atau ujian
   const pathParts = pathname?.split("/") || [];
   const isInsideModule = pathParts.length > 3 && pathParts[2] === "modul";
   const currentModuleId = isInsideModule ? pathParts[3] : "";
+  const isInsideUjian = pathParts.length > 3 && pathParts[2] === "ujian";
+  const currentUjianId = isInsideUjian ? pathParts[3] : "";
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -55,6 +62,19 @@ export default function Menu({ isSidebarOpen }: MenuProps) {
         .catch(err => console.error("Gagal mengambil detail modul", err));
     }
   }, [isInsideModule, currentModuleId]);
+
+  useEffect(() => {
+    if (isInsideUjian && currentUjianId) {
+      fetch(`/api/siswa/ujian/${currentUjianId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.data) {
+            setUjianData(data.data);
+          }
+        })
+        .catch(err => console.error("Gagal mengambil detail ujian", err));
+    }
+  }, [isInsideUjian, currentUjianId]);
 
   // Helper untuk menentukan apakah link sedang aktif
   const isActive = (path: string) => {
@@ -112,7 +132,18 @@ export default function Menu({ isSidebarOpen }: MenuProps) {
                   const isActive = idx === activeQuestionIdx;
                   
                   let bgClass = 'bg-white/10 text-white/70 border border-white/20 hover:border-[#2196F3]';
-                  if (isActive) {
+                  if (isSubmitted) {
+                    const res = results[q.id];
+                    if (res?.isCorrect) {
+                      bgClass = isActive
+                        ? 'bg-emerald-500 text-white border-2 border-white shadow-lg'
+                        : 'bg-emerald-600 text-white border border-emerald-500';
+                    } else {
+                      bgClass = isActive
+                        ? 'bg-rose-500 text-white border-2 border-white shadow-lg'
+                        : 'bg-rose-600 text-white border border-rose-500';
+                    }
+                  } else if (isActive) {
                     bgClass = 'bg-white text-[#0D47A1] border border-white shadow-md shadow-white/20'; // Soal yang dibuka
                   } else if (isDoubtful) {
                     bgClass = 'bg-orange-500 text-white border border-orange-500 shadow-sm'; // Ragu-ragu
@@ -126,7 +157,7 @@ export default function Menu({ isSidebarOpen }: MenuProps) {
                       onClick={() => {
                         window.dispatchEvent(new CustomEvent('exercise-nav-clicked', { detail: idx }));
                       }}
-                      className={`aspect-square flex items-center justify-center rounded-sm font-bold text-sm transition-all ${bgClass}`}
+                      className={`aspect-square flex items-center justify-center rounded-sm font-bold text-sm transition-all cursor-pointer ${bgClass}`}
                       title={`Soal ${idx + 1}`}
                     >
                       {idx + 1}
@@ -137,22 +168,37 @@ export default function Menu({ isSidebarOpen }: MenuProps) {
 
               {isSidebarOpen && (
                 <div className="mt-8 space-y-3">
-                  <div className="flex items-center gap-2 text-xs text-white/70">
-                    <div className="w-4 h-4 bg-white text-[#0D47A1] border border-white rounded-sm shrink-0 shadow-md shadow-white/20 flex items-center justify-center font-bold text-[8px]">!</div>
-                    Sedang Dibuka
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-white/70">
-                    <div className="w-4 h-4 bg-white/10 border border-white/20 rounded-sm shrink-0"></div>
-                    Belum Dijawab
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-white/70">
-                    <div className="w-4 h-4 bg-[#2196F3] border border-[#2196F3] rounded-sm shrink-0"></div>
-                    Sudah Dijawab
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-white/70">
-                    <div className="w-4 h-4 bg-orange-500 border border-orange-500 rounded-sm shrink-0"></div>
-                    Ragu-ragu
-                  </div>
+                  {isSubmitted ? (
+                    <>
+                      <div className="flex items-center gap-2 text-xs text-white/70">
+                        <div className="w-4 h-4 bg-emerald-600 border border-emerald-400 rounded-sm shrink-0 flex items-center justify-center font-bold text-[9px] text-white">✓</div>
+                        Jawaban Benar
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-white/70">
+                        <div className="w-4 h-4 bg-rose-600 border border-rose-400 rounded-sm shrink-0 flex items-center justify-center font-bold text-[9px] text-white">✕</div>
+                        Jawaban Salah
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 text-xs text-white/70">
+                        <div className="w-4 h-4 bg-white text-[#0D47A1] border border-white rounded-sm shrink-0 shadow-md shadow-white/20 flex items-center justify-center font-bold text-[8px]">!</div>
+                        Sedang Dibuka
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-white/70">
+                        <div className="w-4 h-4 bg-white/10 border border-white/20 rounded-sm shrink-0"></div>
+                        Belum Dijawab
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-white/70">
+                        <div className="w-4 h-4 bg-[#2196F3] border border-[#2196F3] rounded-sm shrink-0"></div>
+                        Sudah Dijawab
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-white/70">
+                        <div className="w-4 h-4 bg-orange-500 border border-orange-500 rounded-sm shrink-0"></div>
+                        Ragu-ragu
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -257,6 +303,98 @@ export default function Menu({ isSidebarOpen }: MenuProps) {
               ))}
             </div>
           )}
+        </nav>
+
+      ) : isInsideUjian ? (
+
+        /* === TAMPILAN JIKA SEDANG DI DALAM UJIAN (NAVIGASI SOAL UJIAN) === */
+        <nav className="flex-1 overflow-y-auto py-6 px-4 scrollbar-thin scrollbar-thumb-[#2196F3] scrollbar-track-transparent">
+          <div className="space-y-6">
+            {isSidebarOpen && (
+              <div>
+                <h2 className="text-xs font-bold text-[#90CAF9] mb-1 uppercase tracking-wider">Navigasi Soal</h2>
+                <p className="text-sm font-bold text-white">Ujian: {ujianData?.judul || "Memuat..."}</p>
+              </div>
+            )}
+
+            <div className={`grid gap-2 ${isSidebarOpen ? 'grid-cols-5' : 'grid-cols-1'}`}>
+              {ujianData?.questions?.map((q: any, idx: number) => {
+                const isAnswered = answeredQuestions.includes(q.id);
+                const isDoubtful = doubtfulQuestions.includes(q.id);
+                const isActive = idx === activeQuestionIdx;
+
+                let bgClass = 'bg-white/10 text-white/70 border border-white/20 hover:border-[#2196F3]';
+                if (isSubmitted) {
+                  const res = results[q.id];
+                  if (res?.isCorrect) {
+                    bgClass = isActive
+                      ? 'bg-emerald-500 text-white border-2 border-white shadow-lg'
+                      : 'bg-emerald-600 text-white border border-emerald-500';
+                  } else {
+                    bgClass = isActive
+                      ? 'bg-rose-500 text-white border-2 border-white shadow-lg'
+                      : 'bg-rose-600 text-white border border-rose-500';
+                  }
+                } else if (isActive) {
+                  bgClass = 'bg-white text-[#0D47A1] border border-white shadow-md shadow-white/20';
+                } else if (isDoubtful) {
+                  bgClass = 'bg-orange-500 text-white border border-orange-500 shadow-sm';
+                } else if (isAnswered) {
+                  bgClass = 'bg-[#2196F3] text-white border border-[#2196F3]';
+                }
+
+                return (
+                  <button
+                    key={q.id}
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent('exercise-nav-clicked', { detail: idx }));
+                    }}
+                    className={`aspect-square flex items-center justify-center rounded-sm font-bold text-sm transition-all cursor-pointer ${bgClass}`}
+                    title={`Soal ${idx + 1}`}
+                  >
+                    {idx + 1}
+                  </button>
+                );
+              })}
+            </div>
+
+            {isSidebarOpen && (
+              <div className="mt-8 space-y-3">
+                {isSubmitted ? (
+                  <>
+                    <div className="flex items-center gap-2 text-xs text-white/70">
+                      <div className="w-4 h-4 bg-emerald-600 border border-emerald-400 rounded-sm shrink-0 flex items-center justify-center font-bold text-[9px] text-white">✓</div>
+                      Jawaban Benar
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-white/70">
+                      <div className="w-4 h-4 bg-rose-600 border border-rose-400 rounded-sm shrink-0 flex items-center justify-center font-bold text-[9px] text-white">✕</div>
+                      Jawaban Salah
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 text-xs text-white/70">
+                      <div className="w-4 h-4 bg-white text-[#0D47A1] border border-white rounded-sm shrink-0 shadow-md shadow-white/20 flex items-center justify-center font-bold text-[8px]">!</div>
+                      Sedang Dibuka
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-white/70">
+                      <div className="w-4 h-4 bg-white/10 border border-white/20 rounded-sm shrink-0"></div>
+                      Belum Dijawab
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-white/70">
+                      <div className="w-4 h-4 bg-[#2196F3] border border-[#2196F3] rounded-sm shrink-0"></div>
+                      Sudah Dijawab
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-white/70">
+                      <div className="w-4 h-4 bg-orange-500 border border-orange-500 rounded-sm shrink-0"></div>
+                      Ragu-ragu
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </nav>
 
       ) : (

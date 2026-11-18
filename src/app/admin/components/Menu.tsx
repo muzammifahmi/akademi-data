@@ -13,16 +13,18 @@ export default function Menu({ isSidebarOpen }: MenuProps) {
 
   const [openDropdowns, setOpenDropdowns] = useState<Record<string, boolean>>({
     utama: true,
-    masterData: true,
-    pengguna: true,
+    sekolah: true,
   });
 
   const toggleDropdown = (key: string) => {
-    if (!isSidebarOpen) return; // Nonaktifkan klik dropdown jika sidebar sedang ditutup
+    if (!isSidebarOpen) return;
     setOpenDropdowns(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const isActive = (path: string) => {
+    if (path === "/admin/sekolah") {
+      return pathname === "/admin/sekolah" || pathname?.startsWith("/admin/sekolah/detail");
+    }
     return pathname?.startsWith(path);
   };
 
@@ -81,62 +83,31 @@ export default function Menu({ isSidebarOpen }: MenuProps) {
           </div>
         </div>
 
-        {/* Kategori 2: Master Data */}
+        {/* Kategori 2: Sekolah & Token */}
         <div className="mb-4">
           {isSidebarOpen ? (
             <button 
-              onClick={() => toggleDropdown('masterData')}
+              onClick={() => toggleDropdown('sekolah')}
               className="w-full flex items-center justify-between px-6 mb-2 text-[#90CAF9] hover:text-white transition-colors"
             >
-              <span className="text-xs font-bold uppercase tracking-wider">Master Data</span>
-              <svg className={`w-3.5 h-3.5 transition-transform ${openDropdowns.masterData ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
+              <span className="text-xs font-bold uppercase tracking-wider">Sekolah &amp; Token</span>
+              <svg className={`w-3.5 h-3.5 transition-transform ${openDropdowns.sekolah ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
             </button>
           ) : (
             <div className="w-8 h-px bg-[#2196F3]/50 mx-auto mb-2 mt-4"></div>
           )}
-          <div className={`overflow-hidden transition-all duration-300 ${isSidebarOpen && !openDropdowns.masterData ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'}`}>
+          <div className={`overflow-hidden transition-all duration-300 ${isSidebarOpen && !openDropdowns.sekolah ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'}`}>
             <ul className="space-y-1 px-3">
               <li>
-                <Link href="/admin/tahun-ajaran" className={getLinkClass("/admin/tahun-ajaran")}>
-                  <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                  {isSidebarOpen && <span className="font-medium text-sm whitespace-nowrap">Tahun Ajaran</span>}
-                </Link>
-              </li>
-              <li>
-                <Link href="/admin/kelas" className={getLinkClass("/admin/kelas")}>
+                <Link href="/admin/sekolah" className={getLinkClass("/admin/sekolah")}>
                   <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-                  {isSidebarOpen && <span className="font-medium text-sm whitespace-nowrap">Daftar Kelas</span>}
-                </Link>
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        {/* Kategori 3: Manajemen Pengguna */}
-        <div className="mb-4">
-          {isSidebarOpen ? (
-            <button 
-              onClick={() => toggleDropdown('pengguna')}
-              className="w-full flex items-center justify-between px-6 mb-2 text-[#90CAF9] hover:text-white transition-colors"
-            >
-              <span className="text-xs font-bold uppercase tracking-wider">Manajemen Pengguna</span>
-              <svg className={`w-3.5 h-3.5 transition-transform ${openDropdowns.pengguna ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
-            </button>
-          ) : (
-            <div className="w-8 h-px bg-[#2196F3]/50 mx-auto mb-2 mt-4"></div>
-          )}
-          <div className={`overflow-hidden transition-all duration-300 ${isSidebarOpen && !openDropdowns.pengguna ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'}`}>
-            <ul className="space-y-1 px-3">
-              <li>
-                <Link href="/admin/pengguna" className={getLinkClass("/admin/pengguna")}>
-                  <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                  {isSidebarOpen && <span className="font-medium text-sm whitespace-nowrap">Daftar Pengguna</span>}
+                  {isSidebarOpen && <span className="font-medium text-sm whitespace-nowrap">Sekolah &amp; Token</span>}
                 </Link>
               </li>
               <li>
-                <Link href="/admin/reset-password" className={getLinkClass("/admin/reset-password")}>
-                  <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
-                  {isSidebarOpen && <span className="font-medium text-sm whitespace-nowrap">Reset Password</span>}
+                <Link href="/admin/sekolah/tambah" className={getLinkClass("/admin/sekolah/tambah")}>
+                  <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                  {isSidebarOpen && <span className="font-medium text-sm whitespace-nowrap">Daftarkan Sekolah</span>}
                 </Link>
               </li>
             </ul>

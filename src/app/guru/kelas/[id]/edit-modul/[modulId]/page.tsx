@@ -5,8 +5,14 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Swal from 'sweetalert2';
-
-const JoditEditor = dynamic(() => import('jodit-react'), { ssr: false });
+import {
+  SqlInlineGuide,
+  SqlTutorialModal,
+  AnswerTableBuilder,
+  SqlTemplatePayload,
+} from '@/app/guru/components/SqlTutorialHelper';
+import VsCodeSqlEditor from '@/components/VsCodeSqlEditor';
+import JoditEditor from '@/components/SafeJoditEditor';
 
 export default function EditModul() {
   const params = useParams();
@@ -71,6 +77,8 @@ export default function EditModul() {
     readonly: false,
     placeholder: 'Ketikkan isi materi pembelajaran di sini...',
     toolbarAdaptive: false,
+    addNewLine: false,
+    addNewLineOnDBLClick: false,
     controls: {
       ol: {
         list: {
@@ -141,6 +149,8 @@ export default function EditModul() {
   const [previewMode, setPreviewMode] = useState<'materi' | 'latihan'>('materi');
   const [previewAnswers, setPreviewAnswers] = useState<Record<string, string>>({});
   const [previewDoubtful, setPreviewDoubtful] = useState<string[]>([]);
+  const [isTutorialModalOpen, setIsTutorialModalOpen] = useState(false);
+  const [tutorialInitialTab, setTutorialInitialTab] = useState<'alur' | 'DQL' | 'DML' | 'DDL'>('alur');
 
   const activeSubBab = curriculum.flatMap(b => b.subBabs).find(s => s.id === activeSubBabId);
 
@@ -156,9 +166,11 @@ export default function EditModul() {
           
           if (mod.babs && mod.babs.length > 0) {
              const mappedBabs = mod.babs.map((b: any) => ({
+                _id: b._id,
                 id: b._id || Date.now() + Math.random(),
                 title: b.title,
                 subBabs: b.subBabs.map((s: any) => ({
+                   _id: s._id,
                    id: s._id || Date.now() + Math.random(),
                    title: s.title,
                    content: s.content,
@@ -319,7 +331,8 @@ export default function EditModul() {
         newQuestion.sqlAnswerKey = "";
         newQuestion.queryType = "DQL";
         newQuestion.targetTable = "";
-        newQuestion.tables = [{ id: `tbl_${Date.now()}`, name: '', columns: [] }];
+        newQuestion.tables = [{ id: `tbl_${Date.now()}`, name: '', columns: [], rows: [] }];
+        newQuestion.answerTables = [{ id: `ans_tbl_${Date.now()}`, name: '', columns: [], rows: [] }];
       } else {
         newQuestion.options = [
           { id: `opt_${Date.now()}_1`, text: "", isCorrect: true },
@@ -347,6 +360,25 @@ export default function EditModul() {
       nextLen = sub.questions.length;
     });
     setActiveQuestionIdx((prev) => Math.max(0, Math.min(prev, nextLen - 1)));
+  };
+
+  const handleDistributeSubBabWeights = () => {
+    if (!activeSubBab?.questions || activeSubBab.questions.length === 0) return;
+    const n = activeSubBab.questions.length;
+    const baseWeight = Math.floor(100 / n);
+    const remainder = 100 % n;
+    mutateActiveSubBab((sub) => {
+      sub.questions.forEach((q: any, idx: number) => {
+        q.scoreWeight = idx < remainder ? baseWeight + 1 : baseWeight;
+      });
+    });
+    Swal.fire({
+      icon: "success",
+      title: "Bobot Dibagi Rata!",
+      text: `Total bobot ${n} butir soal latihan berhasil disesuaikan menjadi 100 poin.`,
+      timer: 1500,
+      showConfirmButton: false,
+    });
   };
 
   const addOption = (qId: string) => {
@@ -657,6 +689,33 @@ export default function EditModul() {
                                 <p className="text-xs text-slate-500">Pilih nomor soal di panel kanan untuk berpindah soal tanpa perlu scroll panjang.</p>
                               </div>
                               <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-sm text-xs font-bold text-slate-700">
+                                  <span>Total Bobot:</span>
+                                  <span className={(activeSubBab?.questions || []).reduce((acc: number, item: any) => acc + (Number(item.scoreWeight) || 0), 0) === 100 ? "text-emerald-600" : "text-amber-600"}>
+                                    {(activeSubBab?.questions || []).reduce((acc: number, item: any) => acc + (Number(item.scoreWeight) || 0), 0)} / 100 Poin
+                                  </span>
+                                </div>
+                                {(activeSubBab?.questions?.length || 0) > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={handleDistributeSubBabWeights}
+                                    className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#0D47A1] text-xs font-semibold rounded-sm transition-colors border border-blue-200 flex items-center gap-1 shadow-xs cursor-pointer"
+                                    title="Bagi rata total bobot seluruh soal latihan di sub-bab ini ke 100 poin"
+                                  >
+                                    ⚖️ Bagi Rata 100
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setTutorialInitialTab('alur');
+                                    setIsTutorialModalOpen(true);
+                                  }}
+                                  className="px-3 py-1.5 bg-[#0D47A1] text-white hover:bg-[#0A367A] text-xs font-semibold rounded-sm transition-colors flex items-center gap-1.5 shadow-sm"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                                  Panduan Soal SQL
+                                </button>
                                 <button type="button" onClick={() => addQuestion('multiple_choice')} className="px-3 py-1.5 bg-white border border-[#2196F3] text-[#2196F3] hover:bg-blue-50 text-xs font-semibold rounded-sm transition-colors flex items-center gap-1.5 shadow-sm">
                                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                                   Soal Pilihan Ganda
@@ -778,6 +837,28 @@ export default function EditModul() {
                                     <input type="number" value={q.scoreWeight} onChange={e => updateQuestion(q.id, 'scoreWeight', Number(e.target.value))} className="w-full px-3 py-2 border border-slate-200 rounded-sm focus:outline-none focus:border-[#2196F3] text-base font-bold text-[#2196F3] text-center" />
                                   </div>
                                 </div>
+
+                                <SqlInlineGuide
+                                  queryType={q.queryType || 'DQL'}
+                                  onApplyTemplate={(tpl: SqlTemplatePayload) => {
+                                    mutateActiveSubBab((sub) => {
+                                      const qTarget = sub.questions.find((x: any) => x.id === q.id);
+                                      if (qTarget) {
+                                        qTarget.queryType = tpl.queryType;
+                                        qTarget.instruction = tpl.instruction;
+                                        qTarget.targetTable = tpl.targetTable;
+                                        qTarget.tables = tpl.tables;
+                                        qTarget.answerTables = tpl.answerTables;
+                                        qTarget.sqlAnswerKey = tpl.sqlAnswerKey;
+                                      }
+                                    });
+                                  }}
+                                  onOpenModal={(tabInit) => {
+                                    setTutorialInitialTab(tabInit || 'alur');
+                                    setIsTutorialModalOpen(true);
+                                  }}
+                                />
+
                                 <div>
                                   {/* INLINE TABLE BUILDER */}
                                   <div className="mt-4 border border-slate-300 rounded-md p-4 bg-slate-50">
@@ -992,90 +1073,17 @@ export default function EditModul() {
                                     <label className="block text-xs font-semibold text-slate-700 mb-1">Preview Query Skema & Data (Auto-Generated)</label>
                                     <pre className="w-full px-3 py-2 border border-slate-300 rounded-sm bg-slate-100 text-slate-600 font-mono text-[10px] overflow-x-auto whitespace-pre-wrap">{generateInitSchemaPreview(q.tables) || '-- Belum ada skema --'}</pre>
                                   </div>
-                                </div>
 
-                                <div className="mt-6 border-t border-slate-200 pt-6">
-                                  <div className="flex justify-between items-end mb-2">
-                                    <div>
-                                      <h4 className="font-bold text-slate-800">Query Kunci Jawaban (Auto-Grader)</h4>
-                                      <p className="text-[10px] text-slate-500">Tulis query yang benar untuk memecahkan soal ini. Hasil query ini akan dicocokkan dengan jawaban siswa.</p>
-                                    </div>
-                                    <div className="flex gap-2">
-                                      <button type="button" onClick={() => {
-                                        Swal.fire({
-                                          title: 'AI Generate',
-                                          text: 'Fitur Generate Query otomatis dari teks instruksi akan segera hadir.',
-                                          icon: 'info'
-                                        });
-                                      }} className="text-[10px] font-bold text-[#2196F3] bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-sm transition-colors flex items-center gap-1 border border-blue-200">
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                        AI Generate
-                                      </button>
-                                      <button type="button" onClick={async () => {
-                                        if (!q.sqlAnswerKey) {
-                                          Swal.fire({ icon: 'warning', title: 'Oops', text: 'Query kunci jawaban belum diisi!' });
-                                          return;
-                                        }
-                                        Swal.fire({
-                                          title: 'Running Query...',
-                                          text: 'Mengeksekusi di database bayangan...',
-                                          allowOutsideClick: false,
-                                          didOpen: () => Swal.showLoading()
-                                        });
-                                        try {
-                                          const generatedInitSchema = generateInitSchemaPreview(q.tables);
-
-                                          const res = await fetch('/api/latihan-soal/evaluate', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({
-                                              studentQuery: q.sqlAnswerKey,
-                                              answerKeyQuery: q.sqlAnswerKey,
-                                              initSchemaSql: generatedInitSchema 
-                                            })
-                                          });
-                                          const data = await res.json();
-                                          
-                                          if (data.success) {
-                                            let resultHtml = '<div class="bg-slate-900 text-green-400 p-4 rounded-sm text-left font-mono text-xs overflow-x-auto mt-4">';
-                                            if (Array.isArray(data.expectedResult)) {
-                                              if (data.expectedResult.length > 0) {
-                                                const cols = Object.keys(data.expectedResult[0]);
-                                                resultHtml += '<table class="w-full text-left border-collapse"><thead><tr>';
-                                                cols.forEach(c => resultHtml += `<th class="border-b border-slate-700 pb-2 pr-4">${c}</th>`);
-                                                resultHtml += '</tr></thead><tbody>';
-                                                data.expectedResult.forEach((row: any) => {
-                                                  resultHtml += '<tr>';
-                                                  cols.forEach(c => resultHtml += `<td class="py-1 pr-4 whitespace-nowrap">${row[c] !== null ? row[c] : 'NULL'}</td>`);
-                                                  resultHtml += '</tr>';
-                                                });
-                                                resultHtml += '</tbody></table>';
-                                              } else {
-                                                resultHtml += 'Empty set (0 rows)';
-                                              }
-                                            } else {
-                                              resultHtml += `Rows affected: ${data.expectedResult.changes || 0}`;
-                                            }
-                                            resultHtml += '</div>';
-                                            
-                                            Swal.fire({
-                                              title: 'Hasil Eksekusi Kunci Jawaban',
-                                              html: resultHtml,
-                                              width: '600px',
-                                              confirmButtonText: 'Tutup'
-                                            });
-                                          } else {
-                                            Swal.fire({ icon: 'error', title: 'Query Error', text: data.error || data.message });
-                                          }
-                                        } catch (err: any) {
-                                          Swal.fire({ icon: 'error', title: 'Network Error', text: err.message });
-                                        }
-                                      }} className="text-[10px] font-bold text-white bg-[#4CAF50] hover:bg-[#388E3C] px-2 py-1 rounded-sm transition-colors flex items-center gap-1 shadow-sm">
-                                        Test Run
-                                      </button>
-                                    </div>
-                                  </div>
-                                  <textarea rows={4} value={q.sqlAnswerKey} onChange={e => updateQuestion(q.id, 'sqlAnswerKey', e.target.value)} placeholder="Tulis query kunci di sini (cth: SELECT * FROM mahasiswa;)..." className="w-full px-3 py-2 border border-slate-700 rounded-sm focus:outline-none focus:border-[#2196F3] font-mono text-sm bg-slate-900 text-green-400"></textarea>
+                                  <AnswerTableBuilder
+                                    question={q}
+                                    initSchemaSql={generateInitSchemaPreview(q.tables)}
+                                    onMutateQuestion={(updater) => {
+                                      mutateActiveSubBab((sub) => {
+                                        const qTarget = sub.questions.find((x: any) => x.id === q.id);
+                                        if (qTarget) updater(qTarget);
+                                      });
+                                    }}
+                                  />
                                 </div>
                               </div>
                             )}
@@ -1278,17 +1286,17 @@ export default function EditModul() {
                                         </div>
                                       </div>
 
-                                      <div className="p-6 space-y-6">
-                                        {q.instruction ? (
-                                          <div
-                                            className="prose prose-sm max-w-none"
-                                            dangerouslySetInnerHTML={{ __html: q.instruction }}
-                                          />
-                                        ) : (
-                                          <p className="text-slate-400 italic text-sm">Teks pertanyaan belum diisi oleh guru...</p>
-                                        )}
+                                      {q.type === 'multiple_choice' ? (
+                                        <div className="p-6 space-y-6">
+                                          {q.instruction ? (
+                                            <div
+                                              className="prose prose-sm max-w-none"
+                                              dangerouslySetInnerHTML={{ __html: q.instruction }}
+                                            />
+                                          ) : (
+                                            <p className="text-slate-400 italic text-sm">Teks pertanyaan belum diisi oleh guru...</p>
+                                          )}
 
-                                        {q.type === 'multiple_choice' && (
                                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             {q.options?.map((opt: any, oIdx: number) => (
                                               <label
@@ -1314,18 +1322,38 @@ export default function EditModul() {
                                               </label>
                                             ))}
                                           </div>
-                                        )}
+                                        </div>
+                                      ) : (
+                                        <div className="grid grid-cols-1 lg:grid-cols-12">
+                                          {/* BAGIAN KIRI: SOAL & SKEMA TABEL REFERENSI */}
+                                          <div className="lg:col-span-5 p-6 border-b lg:border-b-0 lg:border-r border-slate-200 bg-slate-50/30 flex flex-col gap-5">
+                                            <div>
+                                              <div className="flex items-center gap-2 mb-2.5">
+                                                <span className="text-[11px] font-bold uppercase tracking-wider text-[#0D47A1] bg-blue-50 px-2 py-0.5 rounded-sm border border-blue-200">
+                                                  Instruksi Soal
+                                                </span>
+                                                <span className="text-[11px] font-semibold text-slate-500">
+                                                  Tipe: {q.queryType || 'DQL'}
+                                                </span>
+                                              </div>
+                                              {q.instruction ? (
+                                                <div
+                                                  className="prose prose-sm max-w-none text-slate-800"
+                                                  dangerouslySetInnerHTML={{ __html: q.instruction }}
+                                                />
+                                              ) : (
+                                                <p className="text-slate-400 italic text-sm">Teks pertanyaan belum diisi oleh guru...</p>
+                                              )}
+                                            </div>
 
-                                        {q.type === 'sql_query' && (
-                                          <div className="space-y-4">
                                             {validTables.length > 0 && (
-                                              <div className="space-y-3">
+                                              <div className="space-y-3 pt-3 border-t border-slate-200">
                                                 <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Skema &amp; Data Tabel Referensi</h4>
                                                 <div className="grid grid-cols-1 gap-3">
                                                   {validTables.map((tbl: any, tIdx: number) => {
                                                     const validCols = (tbl.columns || []).filter((c: any) => c.name);
                                                     return (
-                                                      <div key={tbl.id || tIdx} className="border border-slate-200 rounded-sm overflow-hidden bg-slate-50/50">
+                                                      <div key={tbl.id || tIdx} className="border border-slate-200 rounded-sm overflow-hidden bg-white shadow-xs">
                                                         <div className="bg-slate-100 px-3 py-2 border-b border-slate-200 flex items-center justify-between">
                                                           <span className="text-xs font-semibold text-slate-800 font-mono">Tabel: {tbl.name}</span>
                                                           <span className="text-[11px] text-slate-500">{validCols.length} Kolom</span>
@@ -1376,20 +1404,30 @@ export default function EditModul() {
                                                 </div>
                                               </div>
                                             )}
-
-                                            <div>
-                                              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Jawaban Query SQL Siswa</label>
-                                              <textarea
-                                                rows={5}
-                                                placeholder="Tuliskan query SQL Anda di sini..."
-                                                value={previewAnswers[q.id] || ''}
-                                                onChange={(e) => setPreviewAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                                                className="w-full px-4 py-3 border border-slate-700 rounded-sm focus:outline-none focus:border-[#2196F3] font-mono text-sm bg-slate-900 text-green-400"
-                                              />
-                                            </div>
                                           </div>
-                                        )}
-                                      </div>
+
+                                          {/* BAGIAN KANAN: EDITOR KODE SQL (ATAS) & TERMINAL HASIL JAWABAN (BAWAH) */}
+                                          <div className="lg:col-span-7 p-5 sm:p-6 bg-white flex flex-col">
+                                            <div className="flex items-center justify-between mb-2">
+                                              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                                                Editor Kode SQL &amp; Terminal Output
+                                              </label>
+                                              <span className="text-[11px] text-slate-500">
+                                                Klik <strong>▶ Jalankan Query</strong> untuk menguji hasil
+                                              </span>
+                                            </div>
+                                            <VsCodeSqlEditor
+                                              value={previewAnswers[q.id] || ''}
+                                              onChange={(val) => setPreviewAnswers(prev => ({ ...prev, [q.id]: val }))}
+                                              queryType={q.queryType || 'DQL'}
+                                              tables={q.tables || []}
+                                              answerTables={q.answerTables || []}
+                                              sqlAnswerKey={q.sqlAnswerKey || ''}
+                                              fileName={`soal_${safeIdx + 1}.sql`}
+                                            />
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })()}
@@ -1637,6 +1675,43 @@ export default function EditModul() {
         )}
         
       </div>
+
+      <SqlTutorialModal
+        isOpen={isTutorialModalOpen}
+        initialTab={tutorialInitialTab}
+        onClose={() => setIsTutorialModalOpen(false)}
+        onApplyTemplate={(tpl: SqlTemplatePayload) => {
+          let targetIndex = activeQuestionIdx;
+          mutateActiveSubBab((sub) => {
+            if (!sub.hasExercise) sub.hasExercise = true;
+            if (!sub.questions) sub.questions = [];
+            const currentQ = sub.questions[activeQuestionIdx];
+            if (currentQ && currentQ.type === 'sql_query') {
+              currentQ.queryType = tpl.queryType;
+              currentQ.instruction = tpl.instruction;
+              currentQ.targetTable = tpl.targetTable;
+              currentQ.tables = tpl.tables;
+              currentQ.answerTables = tpl.answerTables;
+              currentQ.sqlAnswerKey = tpl.sqlAnswerKey;
+            } else {
+              sub.questions.push({
+                id: `q_${Date.now()}`,
+                type: 'sql_query',
+                queryType: tpl.queryType,
+                instruction: tpl.instruction,
+                targetTable: tpl.targetTable,
+                tables: tpl.tables,
+                answerTables: tpl.answerTables,
+                sqlAnswerKey: tpl.sqlAnswerKey,
+                scoreWeight: 10,
+              });
+              targetIndex = sub.questions.length - 1;
+            }
+          });
+          setActiveQuestionIdx(targetIndex);
+          setActiveTab('latihan');
+        }}
+      />
     </main>
   );
 }

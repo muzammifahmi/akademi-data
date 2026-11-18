@@ -5,7 +5,21 @@ import path from 'path';
 export async function POST(req: Request) {
   try {
     const data = await req.formData();
-    const files = data.getAll('files[0]'); // Jodit sends files as files[0], files[1], etc.
+    
+    // Ambil semua file yang dikirim oleh Jodit (baik files[0], files[], files, dll)
+    let files: File[] = [];
+    for (const [, val] of data.entries()) {
+      if (typeof val === 'object' && val && 'arrayBuffer' in val && (val as File).size > 0) {
+        files.push(val as File);
+      }
+    }
+
+    if (files.length === 0) {
+      const fallbackFiles = data.getAll('files[0]');
+      if (fallbackFiles && fallbackFiles.length > 0) {
+        files = fallbackFiles as File[];
+      }
+    }
     
     if (!files || files.length === 0) {
       return NextResponse.json({ success: false, error: 'No files uploaded' }, { status: 400 });

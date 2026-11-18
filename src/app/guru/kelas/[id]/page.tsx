@@ -10,20 +10,28 @@ export default function DetailKelas() {
   const [activeTab, setActiveTab] = useState('tugas');
   const [moduls, setModuls] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
+  const [kelasDetail, setKelasDetail] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchSiswa, setSearchSiswa] = useState('');
 
   React.useEffect(() => {
     const fetchData = async () => {
       try {
-        const [modulsRes, studentsRes] = await Promise.all([
+        const [kelasRes, modulsRes, studentsRes] = await Promise.all([
+          fetch(`/api/kelas/${params.id}`),
           fetch(`/api/modul?kelas_id=${params.id}`),
           fetch(`/api/kelas/${params.id}/siswa`)
         ]);
 
-        const modulsData = await modulsRes.json();
-        const studentsData = await studentsRes.json();
+        const [kelasData, modulsData, studentsData] = await Promise.all([
+          kelasRes.json(),
+          modulsRes.json(),
+          studentsRes.json(),
+        ]);
 
+        if (kelasData.success && kelasData.data) {
+          setKelasDetail(kelasData.data);
+        }
         if (modulsData.success) {
           setModuls(modulsData.data);
         }
@@ -39,14 +47,57 @@ export default function DetailKelas() {
     fetchData();
   }, [params.id]);
 
-  // Data dummy, idealnya difetch berdasarkan params.id
   const classData = {
     id: params.id as string,
-    name: "XII RPL 1",
-    subject: "Basis Data Dasar",
-    code: "DB1-X29A",
+    name: kelasDetail?.nama_kelas || "Memuat Kelas...",
+    subject: kelasDetail?.sekolah_id?.nama_sekolah || "Basis Data Dasar",
+    code: kelasDetail?.kode_kelas || "-",
     studentsCount: students.length,
     modulesCount: moduls.length,
+  };
+
+  const handleEditNamaKelas = async () => {
+    const { value: newName } = await Swal.fire({
+      title: 'Ubah Nama Kelas',
+      input: 'text',
+      inputLabel: 'Nama Kelas',
+      inputValue: classData.name,
+      showCancelButton: true,
+      confirmButtonColor: '#2196F3',
+      confirmButtonText: 'Simpan',
+      cancelButtonText: 'Batal',
+      inputValidator: (value) => {
+        if (!value || !value.trim()) {
+          return 'Nama kelas tidak boleh kosong!';
+        }
+        return null;
+      }
+    });
+
+    if (newName && newName.trim() !== classData.name) {
+      try {
+        const res = await fetch(`/api/kelas/${classData.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nama_kelas: newName.trim() }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setKelasDetail((prev: any) => ({ ...prev, nama_kelas: newName.trim() }));
+          Swal.fire({
+            icon: 'success',
+            title: 'Berhasil',
+            text: 'Nama kelas berhasil diperbarui.',
+            timer: 1500,
+            showConfirmButton: false,
+          });
+        } else {
+          Swal.fire('Gagal', data.error || 'Gagal memperbarui nama kelas', 'error');
+        }
+      } catch {
+        Swal.fire('Error', 'Terjadi kesalahan sistem', 'error');
+      }
+    }
   };
 
   const filteredStudents = students.filter(student => 
@@ -70,7 +121,19 @@ export default function DetailKelas() {
           <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#2196F3]"></div>
           
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">{classData.name}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-slate-800">{classData.name}</h1>
+              <button
+                type="button"
+                onClick={handleEditNamaKelas}
+                className="p-1.5 text-slate-400 hover:text-[#2196F3] hover:bg-blue-50 rounded-sm transition-colors"
+                title="Ubah Nama Kelas"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+            </div>
             <p className="text-slate-500 font-medium mt-1">{classData.subject}</p>
           </div>
           
@@ -79,7 +142,22 @@ export default function DetailKelas() {
               <p className="text-xs text-slate-400 font-medium mb-0.5">Kode Kelas</p>
               <code className="font-mono font-bold text-slate-700">{classData.code}</code>
             </div>
-            <button className="p-2 text-slate-400 hover:text-[#2196F3] bg-white border border-slate-200 rounded-sm hover:border-[#2196F3] transition-colors" title="Salin Kode">
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(classData.code);
+                Swal.fire({
+                  toast: true,
+                  position: 'top-end',
+                  icon: 'success',
+                  title: 'Kode kelas berhasil disalin!',
+                  showConfirmButton: false,
+                  timer: 2000,
+                });
+              }}
+              className="p-2 text-slate-400 hover:text-[#2196F3] bg-white border border-slate-200 rounded-sm hover:border-[#2196F3] transition-colors"
+              title="Salin Kode"
+            >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
             </button>
           </div>

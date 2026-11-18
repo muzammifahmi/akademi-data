@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect } from "react";
 
 export default function DashboardGuru() {
@@ -33,6 +34,18 @@ export default function DashboardGuru() {
           <p className="text-blue-200 text-sm font-medium">
             Pantau perkembangan belajar siswa dan kelola modul pembelajaran dari dashboard ini.
           </p>
+        </div>
+
+        <div className="relative z-10 shrink-0">
+          <Link
+            href="/guru/kelas/tambah"
+            className="px-4 py-2.5 bg-[#2196F3] hover:bg-[#1976D2] text-white font-bold text-sm rounded-sm shadow-sm transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+            </svg>
+            Buat Kelas Baru
+          </Link>
         </div>
       </div>
 
